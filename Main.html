@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Mini Roblox Luau Playground</title>
+<style>
+body{margin:0;background:#0b0f1a;color:#e8ebff;font-family:system-ui,Arial}
+#top{display:flex;gap:8px;padding:10px;background:#12172a}
+textarea{flex:1;height:200px;background:#0f1426;color:#e8ebff;border:1px solid #2a3160;border-radius:10px;padding:10px;font-family:monospace;font-size:14px}
+button{background:#7c9cff;border:none;border-radius:10px;padding:10px 16px;font-weight:600;cursor:pointer}
+#out{padding:10px;height:calc(100vh - 230px);overflow:auto;white-space:pre-wrap;font-family:monospace}
+.warn{color:#ffb86b}
+</style>
+</head>
+<body>
+<div id="top">
+<textarea id="code">local test = true
+
+while test == true do
+	for i = 1, 10 do
+		print("test")
+	end
+	task.wait(1)
+end</textarea>
+<button onclick="run()">Run</button>
+</div>
+<div id="out"></div>
+
+<script>
+const out = document.getElementById("out")
+
+function write(text, cls){
+	const d = document.createElement("div")
+	if(cls) d.className = cls
+	d.textContent = text
+	out.appendChild(d)
+	out.scrollTop = out.scrollHeight
+}
+
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)) }
+
+async function run(){
+	out.textContent = ""
+	let code = document.getElementById("code").value.replace(/\r/g,"")
+	let lines = code.split("\n")
+	let vars = {}
+	async function exec(block){
+		for(let i=0;i<block.length;i++){
+			let line = block[i].trim()
+			if(!line) continue
+
+			if(line.startsWith("local ")){
+				let p = line.replace("local ","").split("=")
+				let k = p[0].trim()
+				let v = evalExpr(p.slice(1).join("=").trim())
+				vars[k] = v
+				continue
+			}
+
+			if(line.startsWith("print(")){
+				let v = evalExpr(line.slice(6,-1))
+				write(String(v))
+				continue
+			}
+
+			if(line.startsWith("warn(")){
+				let v = evalExpr(line.slice(5,-1))
+				write(String(v),"warn")
+				continue
+			}
+
+			if(line.startsWith("wait(") || line.startsWith("task.wait(")){
+				let v = Number(evalExpr(line.includes("task.") ? line.slice(10,-1) : line.slice(5,-1)))
+				await sleep((isNaN(v)?1:v)*1000)
+				continue
+			}
+
+			if(line.startsWith("while ")){
+				let cond = line.slice(6,line.indexOf(" do"))
+				let inner = []
+				i++
+				let depth = 1
+				for(;i<block.length;i++){
+					let l = block[i].trim()
+					if(l.startsWith("while ")||l.startsWith("for ")) depth++
+					if(l=="end") depth--
+					if(depth==0) break
+					inner.push(block[i])
+				}
+				while(evalCond(cond)){
+					await exec(inner)
+				}
+				continue
+			}
+
+			if(line.startsWith("for ")){
+				let m = line.match(/for\s+(\w+)\s*=\s*(.+)\s*,\s*(.+)\s+do/)
+				let vname = m[1]
+				let start = Number(evalExpr(m[2]))
+				let end = Number(evalExpr(m[3]))
+				let inner = []
+				i++
+				let depth = 1
+				for(;i<block.length;i++){
+					let l = block[i].trim()
+					if(l.startsWith("while ")||l.startsWith("for ")) depth++
+					if(l=="end") depth--
+					if(depth==0) break
+					inner.push(block[i])
+				}
+				for(let v=start;v<=end;v++){
+					vars[vname]=v
+					await exec(inner)
+				}
+				continue
+			}
+		}
+	}
+
+	function evalExpr(expr){
+		expr = expr.trim()
+		if(expr.startsWith('"') && expr.endsWith('"')) return expr.slice(1,-1)
+		if(expr=="true") return true
+		if(expr=="false") return false
+		if(!isNaN(Number(expr))) return Number(expr)
+		return vars[expr]
+	}
+
+	function evalCond(cond){
+		let parts = cond.split("==")
+		if(parts.length==2){
+			return evalExpr(parts[0]) == evalExpr(parts[1])
+		}
+		return Boolean(evalExpr(cond))
+	}
+
+	await exec(lines)
+}
+</script>
+</body>
+</html>
